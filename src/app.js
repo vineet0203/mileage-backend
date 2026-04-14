@@ -6,6 +6,7 @@ import dotenv from 'dotenv';
 import ApiResponse from './utils/ApiResponse.js';
 import ApiError from './utils/ApiError.js';
 import authRoutes from './modules/auth/auth.routes.js';
+import userRoutes from './modules/users/user.routes.js';
 
 dotenv.config();
 
@@ -20,6 +21,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Routes
 app.use('/auth', authRoutes);
+app.use('/users', userRoutes);
 
 // Health check
 app.get('/health', (_, res) => {
@@ -27,7 +29,8 @@ app.get('/health', (_, res) => {
 });
 
 // Error handling middleware
-app.use((err, _, res, _) => {
+// Express requires 4 params exactly to treat this as an error handler
+app.use((err, _req, res, _next) => {
   let { status = 500, message = "Internal Server Error", error = null } = err;
 
   // Handle generic errors that aren't instances of ApiError

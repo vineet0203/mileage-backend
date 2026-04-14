@@ -1,26 +1,33 @@
-import ApiError from '../utils/ApiError.js';
-import { AUTH_MESSAGES } from '../modules/auth/auth.constant.js';
+import jwt from "jsonwebtoken";
+import pool from "../config/db.js";
+import ApiError from "../utils/ApiError.js";
+import { AUTH_MESSAGES } from "../modules/auth/auth.constant.js";
+import { AUTH_QUERIES } from "../modules/auth/auth.queries.js";
 
 /**
- * Middleware to protect routes and verify JWT.
- * (Placeholder for actual JWT logic)
+ * Verifies the JWT in the Authorization header and attaches the user to req.user.
  */
 export const authMiddleware = async (req, res, next) => {
   try {
-    // TODO: Extract token from headers (Authorization: Bearer <token>)
-    // TODO: Verify JWT token
-    // TODO: Fetch user from DB and attach to req.user
-
-    // Skeleton implementation
-    const token = req.headers.authorization?.split(' ')[1];
-    if (!token) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
       throw new ApiError(401, AUTH_MESSAGES.UNAUTHORIZED);
     }
 
-    // Mocking user for now
-    req.user = { id: 'mock-id', role: 'ADMIN' };
+    const token = authHeader.split(" ")[1];
+
+    // Verify signature + expiry
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || "jwt_secret");
+
+    // Confirm user still exists in DB
+    const [users] = await pool.query(AUTH_QUERIES.FIND_BY_ID, [decoded.id]);
+    if (users.length === 0) {
+      throw new ApiError(401, "User not found or session expired");
+    }
+
+    req.user = users[0];
     next();
   } catch (error) {
-    next(error);
+    next(new ApiError(401, error.message || AUTH_MESSAGES.UNAUTHORIZED));
   }
 };
