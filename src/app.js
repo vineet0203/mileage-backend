@@ -5,6 +5,7 @@ import morgan from 'morgan';
 import dotenv from 'dotenv';
 import ApiResponse from './utils/ApiResponse.js';
 import ApiError from './utils/ApiError.js';
+import authRoutes from './modules/auth/auth.routes.js';
 
 dotenv.config();
 
@@ -16,6 +17,9 @@ app.use(cors());
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Routes
+app.use('/auth', authRoutes);
 
 // Health check
 app.get('/health', (_, res) => {
