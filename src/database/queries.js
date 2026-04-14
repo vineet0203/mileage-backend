@@ -24,4 +24,14 @@ export const DDL = {
     );
   `,
 
+  CREATE_TRAVEL_ROUTES_TABLE: `
+    CREATE TABLE IF NOT EXISTS travel_routes (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      start_destination VARCHAR(255) NOT NULL,
+      end_destination VARCHAR(255) NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    );
+  `,
 };
