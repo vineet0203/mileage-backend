@@ -1,6 +1,6 @@
 export const AUTH_QUERIES = {
   FIND_BY_EMAIL: `
-    SELECT id, email, password, role, is_verified, otp, otp_expires_at,
+    SELECT id, email, fullname, password, role, is_verified, otp, otp_expires_at,
            reset_token, reset_token_expires_at, invite_token, refresh_token
     FROM users
     WHERE email = ?
@@ -8,15 +8,15 @@ export const AUTH_QUERIES = {
   `,
 
   FIND_BY_ID: `
-    SELECT id, email, role, is_verified
+    SELECT id, email, fullname, role, is_verified
     FROM users
     WHERE id = ?
     LIMIT 1;
   `,
 
   INSERT_USER: `
-    INSERT INTO users (email, password, role, otp, otp_expires_at)
-    VALUES (?, ?, ?, ?, ?);
+    INSERT INTO users (email, fullname, password, role, otp, otp_expires_at)
+    VALUES (?, ?, ?, ?, ?, ?);
   `,
 
   INSERT_INVITED_USER: `

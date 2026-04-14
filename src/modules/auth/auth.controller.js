@@ -15,10 +15,10 @@ import { AUTH_QUERIES } from "./auth.queries.js";
  */
 export const signup = async (req, res, next) => {
   try {
-    const { email, password, role } = req.body;
+    const { email, fullname, password, role } = req.body;
 
-    if (!email || !password || !role) {
-      throw new ApiError(400, "Email, password and role are required");
+    if (!email || !fullname || !password || !role) {
+      throw new ApiError(400, "Email, fullname, password and role are required");
     }
 
     // 1. Check duplicate
@@ -36,6 +36,7 @@ export const signup = async (req, res, next) => {
     // 4. Save user (inactive)
     await pool.query(AUTH_QUERIES.INSERT_USER, [
       email,
+      fullname,
       hashed,
       role,
       otp,
@@ -93,7 +94,7 @@ export const login = async (req, res, next) => {
       new ApiResponse(
         200,
         {
-          user: { id: user.id, email: user.email, role: user.role },
+          user: { id: user.id, email: user.email, fullname: user.fullname, role: user.role },
           accessToken,
           refreshToken,
         },

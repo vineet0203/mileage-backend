@@ -10,6 +10,7 @@ export const DDL = {
     CREATE TABLE IF NOT EXISTS users (
       id                     INT AUTO_INCREMENT PRIMARY KEY,
       email                  VARCHAR(255)  NOT NULL UNIQUE,
+      fullname               VARCHAR(255)  DEFAULT NULL,
       password               VARCHAR(255)  DEFAULT NULL,
       role                   ENUM('ADMIN','EMPLOYER','EMPLOYEE') NOT NULL,
       is_verified            TINYINT(1)    NOT NULL DEFAULT 0,
@@ -28,6 +29,7 @@ export const DDL = {
     CREATE TABLE IF NOT EXISTS travel_routes (
       id INT AUTO_INCREMENT PRIMARY KEY,
       name VARCHAR(255) NOT NULL,
+      rate INT NOT NULL DEFAULT 0,
       start_destination VARCHAR(255) NOT NULL,
       end_destination VARCHAR(255) NOT NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

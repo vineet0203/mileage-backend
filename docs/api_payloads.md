@@ -31,6 +31,7 @@ curl -X POST http://localhost:5000/auth/signup \
   -H "Content-Type: application/json" \
   -d '{
     "email": "user@example.com",
+    "fullname": "John Doe",
     "password": "Password123",
     "role": "EMPLOYEE"
   }'
@@ -57,7 +58,7 @@ curl -X POST http://localhost:5000/auth/login \
 **Response `data`:**
 ```json
 {
-  "user": { "id": 1, "email": "user@example.com", "role": "EMPLOYEE" },
+  "user": { "id": 1, "email": "user@example.com", "fullname": "John Doe", "role": "EMPLOYEE" },
   "accessToken": "eyJ...",
   "refreshToken": "eyJ..."
 }
@@ -214,6 +215,7 @@ curl -X GET http://localhost:5000/auth/me \
 {
   "id": 1,
   "email": "user@example.com",
+  "fullname": "John Doe",
   "role": "EMPLOYEE",
   "is_verified": 1
 }
@@ -294,7 +296,7 @@ curl -X GET http://localhost:5000/users \
 **Response `data`:**
 ```json
 [
-  { "id": 1, "email": "employee@company.com", "role": "EMPLOYEE", "is_verified": 1, "created_at": "..." }
+  { "id": 1, "email": "employee@company.com", "fullname": "John Doe", "role": "EMPLOYEE", "is_verified": 1, "created_at": "..." }
 ]
 ```
 
@@ -315,11 +317,95 @@ curl -X GET http://localhost:5000/users/1 \
 {
   "id": 1,
   "email": "employee@company.com",
+  "fullname": "John Doe",
   "role": "EMPLOYEE",
   "is_verified": 1,
   "created_at": "...",
   "updated_at": "..."
 }
+```
+
+---
+
+## Travel Routes Module — `/routes`
+
+### Protected Routes (JWT required)
+
+---
+
+#### 17. Create Route
+**`POST /routes`**
+
+Creation of a new predefined travel route. (Requires ADMIN or EMPLOYER role)
+
+```bash
+curl -X POST http://localhost:5000/routes \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Sector 35 - Sector 43 Chd",
+    "rate": 10,
+    "startDestination": "Sector 35",
+    "endDestination": "Sector 43"
+  }'
+```
+
+---
+
+#### 18. Update Route
+**`PUT /routes/:id`**
+
+Update an existing route. (Requires ADMIN or EMPLOYER role)
+
+```bash
+curl -X PUT http://localhost:5000/routes/1 \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Sector 35 - Sector 43 Chd Updated",
+    "rate": 12,
+    "startDestination": "Sector 35",
+    "endDestination": "Sector 43"
+  }'
+```
+
+---
+
+#### 19. Delete Route
+**`DELETE /routes/:id`**
+
+Remove a route from the system. (Requires ADMIN or EMPLOYER role)
+
+```bash
+curl -X DELETE http://localhost:5000/routes/1 \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+#### 20. List/Search Routes
+**`GET /routes`**
+
+List all routes or filter by `name`, `startDestination`, or `endDestination`.
+
+```bash
+curl -X GET "http://localhost:5000/routes?name=Sector" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+**Response `data`:**
+```json
+[
+  {
+    "id": 1,
+    "name": "Sector 35 - Sector 43 Chd",
+    "rate": 10,
+    "start_destination": "Sector 35",
+    "end_destination": "Sector 43",
+    "created_at": "...",
+    "updated_at": "..."
+  }
+]
 ```
 
 ---

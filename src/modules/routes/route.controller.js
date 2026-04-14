@@ -9,14 +9,15 @@ import { ROUTE_QUERIES } from "./route.queries.js";
  */
 export const createRoute = async (req, res, next) => {
   try {
-    const { name, startDestination, endDestination } = req.body;
+    const { name, rate, startDestination, endDestination } = req.body;
 
-    if (!name || !startDestination || !endDestination) {
-      throw new ApiError(400, "Name, start destination, and end destination are required");
+    if (!name || rate === undefined || !startDestination || !endDestination) {
+      throw new ApiError(400, "Name, rate, start destination, and end destination are required");
     }
 
     const [result] = await pool.query(ROUTE_QUERIES.INSERT_ROUTE, [
       name,
+      rate,
       startDestination,
       endDestination,
     ]);
@@ -34,14 +35,15 @@ export const createRoute = async (req, res, next) => {
 export const updateRoute = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { name, startDestination, endDestination } = req.body;
+    const { name, rate, startDestination, endDestination } = req.body;
 
-    if (!name || !startDestination || !endDestination) {
-      throw new ApiError(400, "Name, start destination, and end destination are required");
+    if (!name || rate === undefined || !startDestination || !endDestination) {
+      throw new ApiError(400, "Name, rate, start destination, and end destination are required");
     }
 
     const [result] = await pool.query(ROUTE_QUERIES.UPDATE_ROUTE, [
       name,
+      rate,
       startDestination,
       endDestination,
       id,

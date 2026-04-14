@@ -1,12 +1,12 @@
 export const ROUTE_QUERIES = {
   INSERT_ROUTE: `
-    INSERT INTO travel_routes (name, start_destination, end_destination)
-    VALUES (?, ?, ?);
+    INSERT INTO travel_routes (name, rate, start_destination, end_destination)
+    VALUES (?, ?, ?, ?);
   `,
 
   UPDATE_ROUTE: `
     UPDATE travel_routes
-    SET name = ?, start_destination = ?, end_destination = ?
+    SET name = ?, rate = ?, start_destination = ?, end_destination = ?
     WHERE id = ?;
   `,
 
@@ -16,13 +16,13 @@ export const ROUTE_QUERIES = {
   `,
 
   FIND_BY_ID: `
-    SELECT id, name, start_destination, end_destination, created_at, updated_at
+    SELECT id, name, rate, start_destination, end_destination, created_at, updated_at
     FROM travel_routes
     WHERE id = ?;
   `,
 
   SEARCH_ROUTES: `
-    SELECT id, name, start_destination, end_destination, created_at, updated_at
+    SELECT id, name, rate, start_destination, end_destination, created_at, updated_at
     FROM travel_routes
     WHERE
       (? IS NULL OR name LIKE ?) AND
