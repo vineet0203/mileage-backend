@@ -5,7 +5,7 @@ import pool from "../../config/db.js";
 import ApiResponse from "../../utils/ApiResponse.js";
 import ApiError from "../../utils/ApiError.js";
 import { AUTH_MESSAGES } from "./auth.constant.js";
-import { sendOtpMail } from "../../utils/mailService.js";
+import { sendMail } from "../../utils/mailService.js";
 import { generateOtp, generateTokens } from "./auth.helper.js";
 import { AUTH_QUERIES } from "./auth.queries.js";
 
@@ -43,7 +43,7 @@ export const signup = async (req, res, next) => {
     ]);
 
     // 5. Send OTP (dummy logs for now)
-    await sendOtpMail(email, otp);
+    await sendMail(email, otp, "VERIFY");
 
     res
       .status(201)
@@ -160,7 +160,7 @@ export const resendVerification = async (req, res, next) => {
     // Generate fresh OTP
     const { otp, expiresAt } = generateOtp();
     await pool.query(AUTH_QUERIES.SET_OTP, [otp, expiresAt, email]);
-    await sendOtpMail(email, otp);
+    await sendMail(email, otp, "VERIFY");
 
     res
       .status(200)
@@ -198,7 +198,8 @@ export const forgotPassword = async (req, res, next) => {
 
     const { otp, expiresAt } = generateOtp();
     await pool.query(AUTH_QUERIES.SET_RESET_TOKEN, [otp, expiresAt, email]);
-    await sendOtpMail(email, otp);
+
+    await sendMail(email, otp, "RESET_PASSWORD");
 
     res
       .status(200)
@@ -412,7 +413,7 @@ export const inviteEmployee = async (req, res, next) => {
       role,
       inviteToken,
     ]);
-    await sendOtpMail(email, `[INVITE TOKEN] ${inviteToken}`);
+    await sendMail(email, inviteToken, "INVITE");
 
     res
       .status(201)
