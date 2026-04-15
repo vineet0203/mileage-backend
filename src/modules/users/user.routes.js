@@ -11,14 +11,24 @@ router.use(authMiddleware);
 
 router.get(
   '/',
-  roleMiddleware(USER_ROLES.ADMIN, USER_ROLES.EMPLOYER),
-  userController.listAllUsers
+  userController.getEmployees
 );
 
 router.get(
   '/:id',
-  roleMiddleware(USER_ROLES.ADMIN, USER_ROLES.EMPLOYER),
   userController.getUserDetails
+);
+
+router.put(
+  '/:id',
+  roleMiddleware(USER_ROLES.ADMIN, USER_ROLES.MANAGER),
+  userController.updateEmployee
+);
+
+router.delete(
+  '/:id',
+  roleMiddleware(USER_ROLES.ADMIN),
+  userController.deleteEmployee
 );
 
 export default router;

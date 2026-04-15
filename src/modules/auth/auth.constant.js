@@ -4,7 +4,7 @@
 
 export const USER_ROLES = {
   ADMIN: 'ADMIN',
-  EMPLOYER: 'EMPLOYER',
+  MANAGER: 'MANAGER',
   EMPLOYEE: 'EMPLOYEE',
 };
 

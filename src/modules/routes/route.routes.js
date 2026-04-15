@@ -12,8 +12,8 @@ router.use(authMiddleware);
 // Employees can read/search
 router.get('/', routeController.listRoutes);
 
-// Only ADMIN and EMPLOYER can mutate routes
-const mutationAccess = roleMiddleware(USER_ROLES.ADMIN, USER_ROLES.EMPLOYER);
+// Only ADMIN and MANAGER can mutate routes
+const mutationAccess = roleMiddleware(USER_ROLES.ADMIN, USER_ROLES.MANAGER);
 
 router.post('/', mutationAccess, routeController.createRoute);
 router.put('/:id', mutationAccess, routeController.updateRoute);

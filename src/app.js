@@ -8,6 +8,7 @@ import ApiError from "./utils/ApiError.js";
 import authRoutes from "./modules/auth/auth.routes.js";
 import userRoutes from "./modules/users/user.routes.js";
 import routeRoutes from "./modules/routes/route.routes.js";
+import orgRoutes from "./modules/organizations/org.routes.js";
 
 dotenv.config();
 
@@ -24,6 +25,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/auth", authRoutes);
 app.use("/users", userRoutes);
 app.use("/routes", routeRoutes);
+app.use("/organizations", orgRoutes);
 
 // Health check
 app.get("/health", (_, res) => {

@@ -24,16 +24,16 @@ router.post('/change-password', authController.changePassword);
 router.get('/me', authController.getMe);
 router.post('/revoke-sessions', authController.revokeSessions);
 
-// --- Role-Based Routes (ADMIN / EMPLOYER) ---
+// --- Role-Based Routes (ADMIN / MANAGER) ---
 router.post(
   '/invite-employee',
-  roleMiddleware(USER_ROLES.ADMIN, USER_ROLES.EMPLOYER),
+  roleMiddleware(USER_ROLES.ADMIN, USER_ROLES.MANAGER),
   authController.inviteEmployee
 );
 
 router.get(
   '/invitations',
-  roleMiddleware(USER_ROLES.ADMIN, USER_ROLES.EMPLOYER),
+  roleMiddleware(USER_ROLES.ADMIN, USER_ROLES.MANAGER),
   authController.listInvitations
 );
 

@@ -10,7 +10,12 @@ export const generateOtp = () => {
 /** Sign Access + Refresh tokens for a given user */
 export const generateTokens = (user) => {
   const accessToken = jwt.sign(
-    { id: user.id, email: user.email, role: user.role },
+    { 
+      id: user.id, 
+      email: user.email, 
+      role: user.role, 
+      organization_id: user.organization_id 
+    },
     process.env.JWT_SECRET || "jwt_secret",
     { expiresIn: "15m" },
   );

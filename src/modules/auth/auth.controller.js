@@ -1,28 +1,44 @@
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
+import jwt from "jsonwebtoken";
 
 import pool from "../../config/db.js";
 import ApiResponse from "../../utils/ApiResponse.js";
 import ApiError from "../../utils/ApiError.js";
-import { AUTH_MESSAGES } from "./auth.constant.js";
 import { sendMail } from "../../utils/mailService.js";
 import { generateOtp, generateTokens } from "./auth.helper.js";
-import { AUTH_QUERIES } from "./auth.queries.js";
+import { USER_ROLES } from "./auth.constant.js";
 
 /**
  * POST /auth/signup
- * Register a new user and send OTP for email verification.
+ * Register a new user. If role is MANAGER, auto-create an organization.
  */
 export const signup = async (req, res, next) => {
+  const connection = await pool.getConnection();
   try {
-    const { email, fullname, password, role } = req.body;
+    const { email, fullname, password, organizationName, website, phone } =
+      req.body;
+    const role = req.body.role || USER_ROLES.EMPLOYEE;
 
-    if (!email || !fullname || !password || !role) {
-      throw new ApiError(400, "Email, fullname, password and role are required");
+    if (
+      !email ||
+      !fullname ||
+      !password ||
+      (role === USER_ROLES.ADMIN && !organizationName)
+    ) {
+      throw new ApiError(
+        400,
+        "Email, full name, password and company name are required",
+      );
     }
 
+    await connection.beginTransaction();
+
     // 1. Check duplicate
-    const [existing] = await pool.query(AUTH_QUERIES.FIND_BY_EMAIL, [email]);
+    const [existing] = await connection.query(
+      `SELECT id FROM users WHERE email = ? LIMIT 1`,
+      [email],
+    );
     if (existing.length > 0) {
       throw new ApiError(409, "An account with this email already exists");
     }
@@ -33,24 +49,42 @@ export const signup = async (req, res, next) => {
     // 3. Generate OTP
     const { otp, expiresAt } = generateOtp();
 
-    // 4. Save user (inactive)
-    await pool.query(AUTH_QUERIES.INSERT_USER, [
-      email,
-      fullname,
-      hashed,
-      role,
-      otp,
-      expiresAt,
-    ]);
+    let organizationId = null;
 
-    // 5. Send OTP (dummy logs for now)
+    // 4. Create Organization if Admin (org owner)
+    if (role === USER_ROLES.ADMIN) {
+      const [orgResult] = await connection.query(
+        `INSERT INTO organizations (name, website, phone) VALUES (?, ?, ?)`,
+        [organizationName, website || null, phone || null],
+      );
+      organizationId = orgResult.insertId;
+    }
+
+    // 5. Save user (inactive, pending email verification)
+    await connection.query(
+      `INSERT INTO users (email, fullname, password, role, organization_id, otp, otp_expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [email, fullname, hashed, role, organizationId, otp, expiresAt],
+    );
+
+    await connection.commit();
+
+    // 6. Send verification OTP
     await sendMail(email, otp, "VERIFY");
 
     res
       .status(201)
-      .json(new ApiResponse(201, null, AUTH_MESSAGES.SIGNUP_SUCCESS));
+      .json(
+        new ApiResponse(
+          201,
+          null,
+          "User registered successfully. Please verify your email.",
+        ),
+      );
   } catch (error) {
+    await connection.rollback();
     next(error);
+  } finally {
+    connection.release();
   }
 };
 
@@ -67,38 +101,56 @@ export const login = async (req, res, next) => {
     }
 
     // 1. Find user
-    const [users] = await pool.query(AUTH_QUERIES.FIND_BY_EMAIL, [email]);
+    const [users] = await pool.query(
+      `SELECT u.*, o.name as organization_name 
+       FROM users u 
+       LEFT JOIN organizations o ON u.organization_id = o.id 
+       WHERE u.email = ? LIMIT 1`,
+      [email],
+    );
+
     if (users.length === 0) {
       throw new ApiError(401, "Invalid email or password");
     }
+
     const user = users[0];
 
     // 2. Verify password
-    const match = await bcrypt.compare(password, user.password);
-    if (!match) {
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
       throw new ApiError(401, "Invalid email or password");
     }
 
-    // 3. Check email verified
     if (!user.is_verified) {
       throw new ApiError(403, "Please verify your email before logging in");
     }
 
-    // 4. Generate tokens
+    // 3. Generate tokens
     const { accessToken, refreshToken } = generateTokens(user);
 
-    // 5. Persist refresh token
-    await pool.query(AUTH_QUERIES.SET_REFRESH_TOKEN, [refreshToken, user.id]);
+    // 4. Update refresh token in DB
+    await pool.query(`UPDATE users SET refresh_token = ? WHERE id = ?`, [
+      refreshToken,
+      user.id,
+    ]);
 
     res.status(200).json(
       new ApiResponse(
         200,
         {
-          user: { id: user.id, email: user.email, fullname: user.fullname, role: user.role },
+          user: {
+            id: user.id,
+            email: user.email,
+            fullname: user.fullname,
+            role: user.role,
+            organization_id: user.organization_id,
+            organization_name: user.organization_name,
+            manager_id: user.manager_id,
+          },
           accessToken,
           refreshToken,
         },
-        AUTH_MESSAGES.LOGIN_SUCCESS,
+        "Login successful",
       ),
     );
   } catch (error) {
@@ -108,7 +160,7 @@ export const login = async (req, res, next) => {
 
 /**
  * POST /auth/verify-email
- * Verify account using the OTP that was emailed after signup.
+ * Verify account using the OTP emailed after signup.
  */
 export const verifyEmail = async (req, res, next) => {
   try {
@@ -118,7 +170,11 @@ export const verifyEmail = async (req, res, next) => {
       throw new ApiError(400, "Email and OTP are required");
     }
 
-    const [result] = await pool.query(AUTH_QUERIES.VERIFY_USER, [email, token]);
+    const [result] = await pool.query(
+      `UPDATE users SET is_verified = 1, otp = NULL, otp_expires_at = NULL
+       WHERE email = ? AND otp = ? AND otp_expires_at > NOW()`,
+      [email, token],
+    );
 
     if (result.affectedRows === 0) {
       throw new ApiError(400, "OTP is invalid or has expired");
@@ -150,7 +206,10 @@ export const resendVerification = async (req, res, next) => {
       throw new ApiError(400, "Email is required");
     }
 
-    const [users] = await pool.query(AUTH_QUERIES.FIND_BY_EMAIL, [email]);
+    const [users] = await pool.query(
+      `SELECT id, is_verified FROM users WHERE email = ? LIMIT 1`,
+      [email],
+    );
     if (users.length === 0) {
       throw new ApiError(404, "No account found with this email");
     }
@@ -158,9 +217,11 @@ export const resendVerification = async (req, res, next) => {
       throw new ApiError(400, "This account is already verified");
     }
 
-    // Generate fresh OTP
     const { otp, expiresAt } = generateOtp();
-    await pool.query(AUTH_QUERIES.SET_OTP, [otp, expiresAt, email]);
+    await pool.query(
+      `UPDATE users SET otp = ?, otp_expires_at = ? WHERE email = ?`,
+      [otp, expiresAt, email],
+    );
     await sendMail(email, otp, "VERIFY");
 
     res
@@ -173,7 +234,7 @@ export const resendVerification = async (req, res, next) => {
 
 /**
  * POST /auth/forgot-password
- * Send a password reset token to the given email.
+ * Send a password reset OTP to the given email.
  */
 export const forgotPassword = async (req, res, next) => {
   try {
@@ -183,8 +244,11 @@ export const forgotPassword = async (req, res, next) => {
       throw new ApiError(400, "Email is required");
     }
 
-    const [users] = await pool.query(AUTH_QUERIES.FIND_BY_EMAIL, [email]);
     // Always return success to prevent email enumeration
+    const [users] = await pool.query(
+      `SELECT id FROM users WHERE email = ? LIMIT 1`,
+      [email],
+    );
     if (users.length === 0) {
       return res
         .status(200)
@@ -198,8 +262,10 @@ export const forgotPassword = async (req, res, next) => {
     }
 
     const { otp, expiresAt } = generateOtp();
-    await pool.query(AUTH_QUERIES.SET_RESET_TOKEN, [otp, expiresAt, email]);
-
+    await pool.query(
+      `UPDATE users SET reset_token = ?, reset_token_expires_at = ? WHERE email = ?`,
+      [otp, expiresAt, email],
+    );
     await sendMail(email, otp, "RESET_PASSWORD");
 
     res
@@ -218,7 +284,7 @@ export const forgotPassword = async (req, res, next) => {
 
 /**
  * POST /auth/reset-password
- * Reset the password using the OTP received via email.
+ * Reset password using the OTP received via email.
  */
 export const resetPassword = async (req, res, next) => {
   try {
@@ -229,7 +295,10 @@ export const resetPassword = async (req, res, next) => {
     }
 
     // Verify the reset token matches what is stored for this email
-    const [users] = await pool.query(AUTH_QUERIES.FIND_BY_EMAIL, [email]);
+    const [users] = await pool.query(
+      `SELECT reset_token, reset_token_expires_at FROM users WHERE email = ? LIMIT 1`,
+      [email],
+    );
     if (users.length === 0 || users[0].reset_token !== token) {
       throw new ApiError(400, "Invalid or expired reset OTP");
     }
@@ -238,7 +307,11 @@ export const resetPassword = async (req, res, next) => {
     }
 
     const hashed = await bcrypt.hash(newPassword, 10);
-    await pool.query(AUTH_QUERIES.RESET_PASSWORD, [hashed, token]);
+    await pool.query(
+      `UPDATE users SET password = ?, reset_token = NULL, reset_token_expires_at = NULL
+       WHERE reset_token = ? AND reset_token_expires_at > NOW()`,
+      [hashed, token],
+    );
 
     res
       .status(200)
@@ -272,15 +345,21 @@ export const refreshToken = async (req, res, next) => {
       process.env.REFRESH_TOKEN_SECRET || "refresh_secret",
     );
 
-    // 2. Ensure token matches what is stored (prevents reuse after logout)
-    const [users] = await pool.query(AUTH_QUERIES.FIND_BY_ID, [decoded.id]);
+    // 2. Confirm user still exists
+    const [users] = await pool.query(
+      `SELECT id, email, fullname, role, organization_id, manager_id FROM users WHERE id = ? LIMIT 1`,
+      [decoded.id],
+    );
     if (users.length === 0) {
       throw new ApiError(401, "Session not found");
     }
 
     // 3. Issue new token pair (rotation)
     const { accessToken, refreshToken: newRefresh } = generateTokens(users[0]);
-    await pool.query(AUTH_QUERIES.SET_REFRESH_TOKEN, [newRefresh, users[0].id]);
+    await pool.query(`UPDATE users SET refresh_token = ? WHERE id = ?`, [
+      newRefresh,
+      users[0].id,
+    ]);
 
     res
       .status(200)
@@ -302,7 +381,9 @@ export const refreshToken = async (req, res, next) => {
  */
 export const logout = async (req, res, next) => {
   try {
-    await pool.query(AUTH_QUERIES.SET_REFRESH_TOKEN, [null, req.user.id]);
+    await pool.query(`UPDATE users SET refresh_token = NULL WHERE id = ?`, [
+      req.user.id,
+    ]);
     res.status(200).json(new ApiResponse(200, null, "Logged out successfully"));
   } catch (error) {
     next(error);
@@ -322,9 +403,10 @@ export const changePassword = async (req, res, next) => {
     }
 
     // Re-fetch full user row to get hashed password
-    const [users] = await pool.query(AUTH_QUERIES.FIND_BY_EMAIL, [
-      req.user.email,
-    ]);
+    const [users] = await pool.query(
+      `SELECT password FROM users WHERE email = ? LIMIT 1`,
+      [req.user.email],
+    );
     if (users.length === 0) {
       throw new ApiError(404, "User not found");
     }
@@ -335,7 +417,10 @@ export const changePassword = async (req, res, next) => {
     }
 
     const hashed = await bcrypt.hash(newPassword, 10);
-    await pool.query(AUTH_QUERIES.CHANGE_PASSWORD, [hashed, req.user.id]);
+    await pool.query(`UPDATE users SET password = ? WHERE id = ?`, [
+      hashed,
+      req.user.id,
+    ]);
 
     res
       .status(200)
@@ -351,7 +436,13 @@ export const changePassword = async (req, res, next) => {
  */
 export const getMe = async (req, res, next) => {
   try {
-    const [users] = await pool.query(AUTH_QUERIES.FIND_BY_ID, [req.user.id]);
+    const [users] = await pool.query(
+      `SELECT u.id, u.email, u.fullname, u.role, u.is_verified, u.organization_id, u.manager_id, o.name as organization_name
+       FROM users u
+       LEFT JOIN organizations o ON u.organization_id = o.id
+       WHERE u.id = ? LIMIT 1`,
+      [req.user.id],
+    );
     if (users.length === 0) {
       throw new ApiError(404, "User not found");
     }
@@ -369,7 +460,9 @@ export const getMe = async (req, res, next) => {
  */
 export const revokeSessions = async (req, res, next) => {
   try {
-    await pool.query(AUTH_QUERIES.REVOKE_ALL_SESSIONS, [req.user.id]);
+    await pool.query(`UPDATE users SET refresh_token = NULL WHERE id = ?`, [
+      req.user.id,
+    ]);
     res
       .status(200)
       .json(
@@ -385,35 +478,45 @@ export const revokeSessions = async (req, res, next) => {
 };
 
 // ─────────────────────────────────────────────
-// Role-Based Routes (ADMIN / EMPLOYER)
+// Role-Based Endpoints (ADMIN / MANAGER)
 // ─────────────────────────────────────────────
 
 /**
  * POST /auth/invite-employee
  * Create an inactive account for an employee and send them an invite link.
+ * Only ADMIN and MANAGER can invite.
  */
 export const inviteEmployee = async (req, res, next) => {
   try {
-    const { email, role } = req.body;
+    const { email, role, manager_id } = req.body;
 
     if (!email || !role) {
       throw new ApiError(400, "Email and role are required");
     }
 
     // Check if already registered
-    const [existing] = await pool.query(AUTH_QUERIES.FIND_BY_EMAIL, [email]);
+    const [existing] = await pool.query(
+      `SELECT id FROM users WHERE email = ? LIMIT 1`,
+      [email],
+    );
     if (existing.length > 0) {
       throw new ApiError(409, "An account with this email already exists");
     }
 
+    // Manager assignment logic
+    // 1. If inviter is MANAGER, they are the manager
+    // 2. If inviter is ADMIN, they can specify a manager_id (from dropdown) or it stays NULL
+    let finalManagerId =
+      req.user.role === "MANAGER" ? req.user.id : manager_id || null;
+
     // Generate a unique invite token
     const inviteToken = crypto.randomBytes(32).toString("hex");
 
-    await pool.query(AUTH_QUERIES.INSERT_INVITED_USER, [
-      email,
-      role,
-      inviteToken,
-    ]);
+    await pool.query(
+      `INSERT INTO users (email, role, organization_id, manager_id, invite_token, is_verified) VALUES (?, ?, ?, ?, ?, 0)`,
+      [email, role, req.user.organization_id, finalManagerId, inviteToken],
+    );
+
     await sendMail(email, inviteToken, "INVITE");
 
     res
@@ -428,12 +531,14 @@ export const inviteEmployee = async (req, res, next) => {
 
 /**
  * GET /auth/invitations
- * List all employees who have been invited but haven't accepted yet.
+ * List all pending invitations scoped to the current user's organization.
  */
 export const listInvitations = async (req, res, next) => {
   try {
     const [invitations] = await pool.query(
-      AUTH_QUERIES.LIST_PENDING_INVITATIONS,
+      `SELECT id, email, role, created_at FROM users
+       WHERE invite_token IS NOT NULL AND is_verified = 0 AND organization_id = ?`,
+      [req.user.organization_id],
     );
     res
       .status(200)
@@ -456,10 +561,10 @@ export const acceptInvite = async (req, res, next) => {
     }
 
     const hashed = await bcrypt.hash(password, 10);
-    const [result] = await pool.query(AUTH_QUERIES.ACCEPT_INVITE, [
-      hashed,
-      inviteToken,
-    ]);
+    const [result] = await pool.query(
+      `UPDATE users SET password = ?, invite_token = NULL, is_verified = 1 WHERE invite_token = ?`,
+      [hashed, inviteToken],
+    );
 
     if (result.affectedRows === 0) {
       throw new ApiError(400, "Invalid or already used invite token");

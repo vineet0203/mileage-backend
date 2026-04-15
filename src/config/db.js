@@ -1,6 +1,5 @@
-import mysql from 'mysql2/promise';
-import dotenv from 'dotenv';
-import { DDL } from '../database/queries.js';
+import mysql from "mysql2/promise";
+import dotenv from "dotenv";
 
 dotenv.config();
 
@@ -9,14 +8,14 @@ dotenv.config();
  * Created once and reused across the entire application.
  */
 const pool = mysql.createPool({
-  host:             process.env.DB_HOST     || 'localhost',
-  user:             process.env.DB_USER     || 'root',
-  password:         process.env.DB_PASSWORD || '',
-  database:         process.env.DB_NAME     || 'mileage_db',
-  port:             process.env.DB_PORT     || 3306,
+  host: process.env.DB_HOST || "localhost",
+  user: process.env.DB_USER || "root",
+  password: process.env.DB_PASSWORD || "",
+  database: process.env.DB_NAME || "mileage_db",
+  port: process.env.DB_PORT || 3306,
   waitForConnections: true,
-  connectionLimit:  10,
-  queueLimit:       0,
+  connectionLimit: 10,
+  queueLimit: 0,
 });
 
 /**
@@ -24,19 +23,10 @@ const pool = mysql.createPool({
  */
 const testConnection = async () => {
   const connection = await pool.getConnection();
-  console.log(`Database connected successfully → ${process.env.DB_NAME || 'mileage_db'}`);
+  console.log(
+    `Database connected successfully → ${process.env.DB_NAME || "mileage_db"}`,
+  );
   connection.release();
-};
-
-/**
- * Runs all DDL statements to ensure tables and indexes exist.
- */
-const setupTables = async () => {
-  const ddlStatements = Object.values(DDL);
-  for (const sql of ddlStatements) {
-    await pool.query(sql);
-  }
-  console.log(`Database tables initialized.`);
 };
 
 /**
@@ -45,9 +35,9 @@ const setupTables = async () => {
 export const initDb = async () => {
   try {
     await testConnection();
-    await setupTables();
+    // Manual setup: Table creation is now handled manually to avoid re-runs on reload.
   } catch (error) {
-    console.error('Database initialization failed:', error.message);
+    console.error("Database initialization failed:", error.message);
     process.exit(1);
   }
 };
