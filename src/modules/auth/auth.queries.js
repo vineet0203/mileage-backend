@@ -1,17 +1,19 @@
 export const AUTH_QUERIES = {
   FIND_BY_EMAIL: `
-    SELECT id, email, fullname, password, role, is_verified, otp, otp_expires_at,
-           reset_token, reset_token_expires_at, invite_token, refresh_token,
-           organization_id, manager_id
-    FROM users
-    WHERE email = ?
+    SELECT u.id, u.email, u.fullname, u.password, u.role, u.is_verified, u.otp, u.otp_expires_at,
+           u.reset_token, u.reset_token_expires_at, u.invite_token, u.refresh_token,
+           u.organization_id, u.manager_id, o.name as organization_name
+    FROM users u
+    LEFT JOIN organizations o ON u.organization_id = o.id
+    WHERE u.email = ?
     LIMIT 1;
   `,
 
   FIND_BY_ID: `
-    SELECT id, email, fullname, role, is_verified, organization_id, manager_id
-    FROM users
-    WHERE id = ?
+    SELECT u.id, u.email, u.fullname, u.role, u.is_verified, u.organization_id, u.manager_id, o.name as organization_name
+    FROM users u
+    LEFT JOIN organizations o ON u.organization_id = o.id
+    WHERE u.id = ?
     LIMIT 1;
   `,
 

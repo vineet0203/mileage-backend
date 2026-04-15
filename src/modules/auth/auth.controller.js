@@ -488,10 +488,10 @@ export const revokeSessions = async (req, res, next) => {
  */
 export const inviteEmployee = async (req, res, next) => {
   try {
-    const { email, role, manager_id } = req.body;
+    const { email, role, manager_id, fullname } = req.body;
 
-    if (!email || !role) {
-      throw new ApiError(400, "Email and role are required");
+    if (!email || !role || !fullname) {
+      throw new ApiError(400, "Email, role, and full name are required");
     }
 
     // Check if already registered
@@ -503,21 +503,47 @@ export const inviteEmployee = async (req, res, next) => {
       throw new ApiError(409, "An account with this email already exists");
     }
 
+    if (role === 'ADMIN') {
+      throw new ApiError(403, "Cannot invite users with the ADMIN role.");
+    }
+
     // Manager assignment logic
-    // 1. If inviter is MANAGER, they are the manager
-    // 2. If inviter is ADMIN, they can specify a manager_id (from dropdown) or it stays NULL
-    let finalManagerId =
-      req.user.role === "MANAGER" ? req.user.id : manager_id || null;
+    let finalManagerId = null;
+
+    if (req.user.role === 'MANAGER') {
+      // If inviter is MANAGER, they are the manager
+      finalManagerId = req.user.id;
+    } else if (req.user.role === 'ADMIN') {
+      // If inviter is ADMIN, they must specify a manager_id
+      if (!manager_id) {
+        throw new ApiError(400, "Reporting manager is required.");
+      }
+      
+      // Verify manager exists in the SAME organization
+      const [manager] = await pool.query(
+        `SELECT id FROM users WHERE id = ? AND organization_id = ? AND role IN ('MANAGER', 'ADMIN')`,
+        [manager_id, req.user.organization_id]
+      );
+      
+      if (manager.length === 0) {
+        throw new ApiError(400, "Invalid manager selection. Manager must be an Admin or Manager from your organization.");
+      }
+      finalManagerId = manager_id;
+    }
 
     // Generate a unique invite token
     const inviteToken = crypto.randomBytes(32).toString("hex");
 
     await pool.query(
-      `INSERT INTO users (email, role, organization_id, manager_id, invite_token, is_verified) VALUES (?, ?, ?, ?, ?, 0)`,
-      [email, role, req.user.organization_id, finalManagerId, inviteToken],
+      `INSERT INTO users (email, fullname, role, organization_id, manager_id, invite_token, is_verified) VALUES (?, ?, ?, ?, ?, ?, 0)`,
+      [email, fullname, role, req.user.organization_id, finalManagerId, inviteToken],
     );
 
-    await sendMail(email, inviteToken, "INVITE");
+    await sendMail(email, inviteToken, "INVITE", {
+      inviteeName: fullname,
+      inviterName: req.user.fullname,
+      organizationName: req.user.organization_name,
+    });
 
     res
       .status(201)

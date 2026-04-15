@@ -12,7 +12,8 @@ import ApiError from "../../utils/ApiError.js";
 export const getEmployees = async (req, res, next) => {
   try {
     const { id, role, organization_id, manager_id } = req.user;
-    const { search } = req.query;
+    const { search, page = 1, limit = 10 } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
 
     let sql = `
       SELECT 
@@ -39,16 +40,27 @@ export const getEmployees = async (req, res, next) => {
     }
 
     if (search) {
-      sql += " AND (u.fullname LIKE ? OR u.email LIKE ? OR u.designation LIKE ?)";
-      params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+      sql += " AND (u.fullname LIKE ? OR u.email LIKE ? OR u.phone LIKE ? OR u.designation LIKE ?)";
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
     }
 
     sql += " ORDER BY u.fullname ASC";
 
+    // Add pagination
+    sql += " LIMIT ? OFFSET ?";
+    params.push(parseInt(limit), offset);
+
     const [employees] = await pool.query(sql, params);
 
     res.status(200).json(
-      new ApiResponse(200, employees, "Employees fetched successfully")
+      new ApiResponse(200, {
+        employees,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          count: employees.length
+        }
+      }, "Employees fetched successfully")
     );
   } catch (error) {
     next(error);
@@ -111,17 +123,46 @@ export const updateEmployee = async (req, res, next) => {
       throw new ApiError(403, "Access denied. Only Admins or direct Managers can edit other employees.");
     }
 
+    // Normalize inputs
+    const normalizedFullName = fullname?.trim() || null;
+    const normalizedDesignation = designation?.trim() || null;
+    const normalizedSSN = ssn?.trim() || null;
+    const normalizedPhone = phone?.trim() || null;
+    const normalizedManagerId = (manager_id === "" || manager_id === null) ? null : manager_id;
+
     // Role change restriction: Only Admin can change OTHERS' roles.
     let targetRole = role;
     if (role && role !== existing[0].role) {
       if (!isAdmin || isEditingSelf) {
-        // If not admin, or editing self, prevent role change. 
-        // We can either throw an error or just keep the existing role.
-        // Given 'role cannot be change, only admin...', throwing error is clearer.
         throw new ApiError(403, "Only Admins can change roles of other users.");
+      }
+      if (role === 'ADMIN') {
+        throw new ApiError(403, "Cannot assign ADMIN role.");
       }
     } else {
       targetRole = existing[0].role;
+    }
+
+    // Manager validation for non-admins
+    let finalManagerId = normalizedManagerId;
+    if (targetRole !== 'ADMIN') {
+      if (!normalizedManagerId) {
+        throw new ApiError(400, "Reporting manager is required for non-admin users.");
+      }
+      
+      // Verify manager exists in the SAME organization
+      const [manager] = await pool.query(
+        `SELECT id FROM users WHERE id = ? AND organization_id = ? AND role IN ('MANAGER', 'ADMIN')`,
+        [normalizedManagerId, existing[0].organization_id]
+      );
+      
+      if (manager.length === 0) {
+        throw new ApiError(400, "Invalid manager selection. Manager must be an Admin or Manager from this organization.");
+      }
+      finalManagerId = normalizedManagerId;
+    } else {
+      // Admins report to themselves (NULL in DB)
+      finalManagerId = null;
     }
 
     await pool.query(
@@ -131,9 +172,9 @@ export const updateEmployee = async (req, res, next) => {
         designation = COALESCE(?, designation),
         ssn = COALESCE(?, ssn),
         phone = COALESCE(?, phone),
-        manager_id = COALESCE(?, manager_id)
+        manager_id = ?
       WHERE id = ?`,
-      [fullname, targetRole, designation, ssn, phone, manager_id, id]
+      [normalizedFullName, targetRole, normalizedDesignation, normalizedSSN, normalizedPhone, finalManagerId, id]
     );
 
     res.status(200).json(
