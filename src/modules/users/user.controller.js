@@ -96,7 +96,9 @@ export const getUserDetails = async (req, res, next) => {
 
 /**
  * PUT /users/:id
- * Update employee details. Restricted to ADMIN and MANAGER.
+ * Update a user's profile. All roles can edit their own profile.
+ * Admin/Manager can also edit their employees' fullname and designation.
+ * Phone is self-only. SSN, role, manager_id are admin-only.
  */
 export const updateEmployee = async (req, res, next) => {
   try {
@@ -115,70 +117,104 @@ export const updateEmployee = async (req, res, next) => {
     }
 
     // Authorization Layer
-    const isEditingSelf = currentUserId == id;
-    const isAdmin = currentUserRole === 'ADMIN';
+    const isEditingSelf   = currentUserId == id;
+    const isAdmin         = currentUserRole === 'ADMIN';
     const isManagerOfUser = currentUserRole === 'MANAGER' && existing[0].manager_id === currentUserId;
 
-    if (!isAdmin && !isManagerOfUser && !isEditingSelf) {
+    // Must be editing self, OR be admin/manager of this user
+    if (!isEditingSelf && !isAdmin && !isManagerOfUser) {
       throw new ApiError(403, "Access denied. Only Admins or direct Managers can edit other employees.");
     }
 
-    // Normalize inputs
-    const normalizedFullName = fullname?.trim() || null;
-    const normalizedDesignation = designation?.trim() || null;
-    const normalizedSSN = ssn?.trim() || null;
-    const normalizedPhone = phone?.trim() || null;
-    const normalizedManagerId = (manager_id === "" || manager_id === null) ? null : manager_id;
+    // Employees cannot edit other users
+    if (currentUserRole === 'EMPLOYEE' && !isEditingSelf) {
+      throw new ApiError(403, "Employees can only update their own profile.");
+    }
 
-    // Role change restriction: Only Admin can change OTHERS' roles.
-    let targetRole = role;
-    if (role && role !== existing[0].role) {
+    // ── Field permission matrix ────────────────────────────────────────────
+    // | Field       | Self (any role) | Admin/Manager on others |
+    // |-------------|-----------------|-------------------------|
+    // | fullname    | ✅              | ✅                      |
+    // | designation | ✅              | ✅                      |
+    // | phone       | ✅              | ❌                      |
+    // | role        | ❌              | Admin only              |
+    // | ssn         | ❌              | Admin only              |
+    // | manager_id  | ❌              | Admin only              |
+    // ──────────────────────────────────────────────────────────────────────
+
+    const fields = [];
+    const values = [];
+
+    // fullname — self or admin/manager on others
+    if (fullname !== undefined) {
+      fields.push("fullname = COALESCE(?, fullname)");
+      values.push(fullname?.trim() || null);
+    }
+
+    // designation/skills — self or admin/manager on others
+    if (designation !== undefined) {
+      fields.push("designation = COALESCE(?, designation)");
+      values.push(designation?.trim() || null);
+    }
+
+    // phone — self only
+    if (phone !== undefined) {
+      if (!isEditingSelf) {
+        throw new ApiError(403, "Phone number can only be updated by the user themselves.");
+      }
+      fields.push("phone = COALESCE(?, phone)");
+      values.push(phone?.trim() || null);
+    }
+
+    // ssn — admin only
+    if (ssn !== undefined) {
+      if (!isAdmin) {
+        throw new ApiError(403, "Only Admins can update SSN.");
+      }
+      fields.push("ssn = COALESCE(?, ssn)");
+      values.push(ssn?.trim() || null);
+    }
+
+    // role — admin only, not on self
+    if (role !== undefined && role !== existing[0].role) {
       if (!isAdmin || isEditingSelf) {
         throw new ApiError(403, "Only Admins can change roles of other users.");
       }
       if (role === 'ADMIN') {
         throw new ApiError(403, "Cannot assign ADMIN role.");
       }
-    } else {
-      targetRole = existing[0].role;
+      fields.push("role = ?");
+      values.push(role);
     }
 
-    // Manager validation for non-admins
-    let finalManagerId = normalizedManagerId;
-    if (targetRole !== 'ADMIN') {
-      if (!normalizedManagerId) {
-        throw new ApiError(400, "Reporting manager is required for non-admin users.");
+    // manager_id — admin only
+    if (manager_id !== undefined) {
+      if (!isAdmin) {
+        throw new ApiError(403, "Only Admins can change a user's reporting manager.");
       }
-      
-      // Verify manager exists in the SAME organization
-      const [manager] = await pool.query(
-        `SELECT id FROM users WHERE id = ? AND organization_id = ? AND role IN ('MANAGER', 'ADMIN')`,
-        [normalizedManagerId, existing[0].organization_id]
-      );
-      
-      if (manager.length === 0) {
-        throw new ApiError(400, "Invalid manager selection. Manager must be an Admin or Manager from this organization.");
+      const normalizedManagerId = (manager_id === "" || manager_id === null) ? null : manager_id;
+      if (normalizedManagerId !== null) {
+        const [mgr] = await pool.query(
+          `SELECT id FROM users WHERE id = ? AND organization_id = ? AND role IN ('MANAGER','ADMIN')`,
+          [normalizedManagerId, organization_id]
+        );
+        if (mgr.length === 0) {
+          throw new ApiError(400, "Invalid manager. Must be an Admin or Manager in this organization.");
+        }
       }
-      finalManagerId = normalizedManagerId;
-    } else {
-      // Admins report to themselves (NULL in DB)
-      finalManagerId = null;
+      fields.push("manager_id = ?");
+      values.push(normalizedManagerId);
     }
 
-    await pool.query(
-      `UPDATE users SET 
-        fullname = COALESCE(?, fullname), 
-        role = ?,
-        designation = COALESCE(?, designation),
-        ssn = COALESCE(?, ssn),
-        phone = COALESCE(?, phone),
-        manager_id = ?
-      WHERE id = ?`,
-      [normalizedFullName, targetRole, normalizedDesignation, normalizedSSN, normalizedPhone, finalManagerId, id]
-    );
+    if (fields.length === 0) {
+      throw new ApiError(400, "No valid fields provided for update.");
+    }
+
+    values.push(id);
+    await pool.query(`UPDATE users SET ${fields.join(", ")} WHERE id = ?`, values);
 
     res.status(200).json(
-      new ApiResponse(200, null, "Employee updated successfully")
+      new ApiResponse(200, null, "Profile updated successfully")
     );
   } catch (error) {
     next(error);

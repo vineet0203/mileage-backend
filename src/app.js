@@ -14,9 +14,13 @@ dotenv.config();
 
 const app = express();
 
+// Disable ETag — prevents Android OkHttp from sending If-None-Match which
+// causes Express to return 304 (empty body). Axios rejects 304 → logout loop.
+app.set("etag", false);
+
 // Middlewares
-app.use(helmet());
-app.use(cors());
+app.use(helmet({ contentSecurityPolicy: false }));
+app.use(cors({ origin: "*" }));
 app.use(morgan("dev"));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

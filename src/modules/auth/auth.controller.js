@@ -95,6 +95,8 @@ export const signup = async (req, res, next) => {
 export const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
+    // Check both query (old) and body (new) for "from" key
+    const fromMobile = req.query.from === "mobile" || req.body.from === "mobile";
 
     if (!email || !password) {
       throw new ApiError(400, "Email and password are required");
@@ -102,9 +104,21 @@ export const login = async (req, res, next) => {
 
     // 1. Find user
     const [users] = await pool.query(
-      `SELECT u.*, o.name as organization_name 
+      `SELECT 
+         u.*, 
+         o.name AS organization_name,
+         COALESCE(u.manager_id, am.id) AS manager_id,
+         COALESCE(m.fullname, am.fullname) AS manager_name,
+         u.created_at AS joined_date
        FROM users u 
        LEFT JOIN organizations o ON u.organization_id = o.id 
+       LEFT JOIN users m        ON u.manager_id = m.id
+       LEFT JOIN users am       ON am.id = (
+         SELECT id FROM users 
+         WHERE organization_id = u.organization_id 
+         AND role = 'ADMIN' 
+         LIMIT 1
+       )
        WHERE u.email = ? LIMIT 1`,
       [email],
     );
@@ -115,7 +129,15 @@ export const login = async (req, res, next) => {
 
     const user = users[0];
 
-    // 2. Verify password
+    // 2. Mobile-only restriction: only EMPLOYEE role allowed
+    if (fromMobile && user.role !== USER_ROLES.EMPLOYEE) {
+      throw new ApiError(
+        403,
+        "Access denied. Only employees can log in via the mobile app.",
+      );
+    }
+
+    // 3. Verify password
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
       throw new ApiError(401, "Invalid email or password");
@@ -125,10 +147,10 @@ export const login = async (req, res, next) => {
       throw new ApiError(403, "Please verify your email before logging in");
     }
 
-    // 3. Generate tokens
+    // 4. Generate tokens
     const { accessToken, refreshToken } = generateTokens(user);
 
-    // 4. Update refresh token in DB
+    // 5. Update refresh token in DB
     await pool.query(`UPDATE users SET refresh_token = ? WHERE id = ?`, [
       refreshToken,
       user.id,
@@ -143,9 +165,14 @@ export const login = async (req, res, next) => {
             email: user.email,
             fullname: user.fullname,
             role: user.role,
+            phone: user.phone,
+            designation: user.designation,
+            ssn: user.ssn,
             organization_id: user.organization_id,
             organization_name: user.organization_name,
             manager_id: user.manager_id,
+            manager_name: user.manager_name,
+            joined_date: user.joined_date,
           },
           accessToken,
           refreshToken,
@@ -437,9 +464,29 @@ export const changePassword = async (req, res, next) => {
 export const getMe = async (req, res, next) => {
   try {
     const [users] = await pool.query(
-      `SELECT u.id, u.email, u.fullname, u.role, u.is_verified, u.organization_id, u.manager_id, o.name as organization_name
+      `SELECT
+         u.id,
+         u.email,
+         u.fullname,
+         u.role,
+         u.designation,
+         u.ssn,
+         u.phone,
+         u.is_verified,
+         u.organization_id,
+         o.name        AS organization_name,
+         COALESCE(u.manager_id, am.id) AS manager_id,
+         COALESCE(m.fullname, am.fullname) AS manager_name,
+         u.created_at  AS joined_date
        FROM users u
        LEFT JOIN organizations o ON u.organization_id = o.id
+       LEFT JOIN users m        ON u.manager_id = m.id
+       LEFT JOIN users am       ON am.id = (
+         SELECT id FROM users 
+         WHERE organization_id = u.organization_id 
+         AND role = 'ADMIN' 
+         LIMIT 1
+       )
        WHERE u.id = ? LIMIT 1`,
       [req.user.id],
     );
@@ -449,6 +496,69 @@ export const getMe = async (req, res, next) => {
     res
       .status(200)
       .json(new ApiResponse(200, users[0], "Profile fetched successfully"));
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * PATCH /auth/me
+ * Update the current user's own profile.
+ * Any role can update their own: phone, designation (skills as comma-separated string).
+ * Image upload is not implemented yet (TODO).
+ */
+export const updateMe = async (req, res, next) => {
+  try {
+    const { phone, designation } = req.body;
+
+    // At least one field must be provided
+    if (phone === undefined && designation === undefined) {
+      throw new ApiError(400, "Provide at least one field to update: phone or designation");
+    }
+
+    // Normalize values — keep existing DB value if not supplied
+    const normalizedPhone = phone !== undefined ? (phone?.trim() || null) : undefined;
+    const normalizedDesignation =
+      designation !== undefined ? (designation?.trim() || null) : undefined;
+
+    // Build dynamic SET clause
+    const fields = [];
+    const values = [];
+
+    if (normalizedPhone !== undefined) {
+      fields.push("phone = ?");
+      values.push(normalizedPhone);
+    }
+    if (normalizedDesignation !== undefined) {
+      fields.push("designation = ?");
+      values.push(normalizedDesignation);
+    }
+
+    values.push(req.user.id);
+
+    await pool.query(
+      `UPDATE users SET ${fields.join(", ")} WHERE id = ?`,
+      values,
+    );
+
+    // Return updated profile
+    const [users] = await pool.query(
+      `SELECT
+         u.id, u.email, u.fullname, u.role,
+         u.designation, u.ssn, u.phone, u.is_verified,
+         u.organization_id, o.name AS organization_name,
+         u.manager_id, m.fullname AS manager_name,
+         u.created_at AS joined_date
+       FROM users u
+       LEFT JOIN organizations o ON u.organization_id = o.id
+       LEFT JOIN users m        ON u.manager_id = m.id
+       WHERE u.id = ? LIMIT 1`,
+      [req.user.id],
+    );
+
+    res
+      .status(200)
+      .json(new ApiResponse(200, users[0], "Profile updated successfully"));
   } catch (error) {
     next(error);
   }

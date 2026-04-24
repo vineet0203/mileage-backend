@@ -21,7 +21,6 @@ router.get(
 
 router.put(
   '/:id',
-  roleMiddleware(USER_ROLES.ADMIN, USER_ROLES.MANAGER),
   userController.updateEmployee
 );
 

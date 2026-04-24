@@ -22,6 +22,7 @@ router.use(authMiddleware);
 router.post('/logout', authController.logout);
 router.post('/change-password', authController.changePassword);
 router.get('/me', authController.getMe);
+router.patch('/me', authController.updateMe);
 router.post('/revoke-sessions', authController.revokeSessions);
 
 // --- Role-Based Routes (ADMIN / MANAGER) ---
