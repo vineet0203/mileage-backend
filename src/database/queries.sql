@@ -48,10 +48,50 @@ CREATE TABLE IF NOT EXISTS travel_routes (
   CONSTRAINT fk_route_org FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
 );
 
--- --- MIGRATION HISTORY ---
+-- TRIP MODULE SCHEMA
+CREATE TABLE IF NOT EXISTS trips (
+  id                      INT AUTO_INCREMENT PRIMARY KEY,
+  title                   VARCHAR(255)  NOT NULL,
+  description             TEXT          DEFAULT NULL,
+  user_id                 INT           NOT NULL,
+  organization_id         INT           NOT NULL,
+  route_id                INT           NOT NULL,
+  
+  -- Captured from route at creation time
+  route_name              VARCHAR(255)  NOT NULL,
+  route_rate              INT           NOT NULL,
+  
+  -- Start Trip
+  start_location_address  TEXT          NOT NULL,
+  start_odometer_img      VARCHAR(255)  DEFAULT NULL,
+  start_time              TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  
+  -- End Trip
+  end_location_address    TEXT          DEFAULT NULL,
+  end_odometer_img        VARCHAR(255)  DEFAULT NULL,
+  end_time                TIMESTAMP     NULL DEFAULT NULL,
+  
+  -- Metrics
+  extracted_distance      DECIMAL(10,2) DEFAULT 0.00,
+  distance                DECIMAL(10,2) DEFAULT 0.00,
+  extracted_total_price   DECIMAL(10,2) DEFAULT 0.00,
+  total_price             DECIMAL(10,2) DEFAULT 0.00,
+  
+  -- Combined Status Logic
+  status                  ENUM('IN_PROGRESS', 'COMPLETED_PENDING', 'APPROVED', 'REJECTED') 
+                          NOT NULL DEFAULT 'IN_PROGRESS',
+  
+  created_at              TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at              TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  
+  CONSTRAINT fk_trip_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_trip_org FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+  CONSTRAINT fk_trip_route FOREIGN KEY (route_id) REFERENCES travel_routes(id) ON DELETE CASCADE
+);
 
--- [2026-04-24] CASCADE delete users when their organization is deleted.
--- Run on existing databases to apply the FK change (new installs use CREATE TABLE above).
+-- MIGRATION HISTORY 
+
+-- CASCADE delete users when their organization is deleted.
 ALTER TABLE users
   DROP FOREIGN KEY fk_user_org,
   ADD CONSTRAINT fk_user_org

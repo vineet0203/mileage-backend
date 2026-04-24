@@ -9,13 +9,12 @@ import authRoutes from "./modules/auth/auth.routes.js";
 import userRoutes from "./modules/users/user.routes.js";
 import routeRoutes from "./modules/routes/route.routes.js";
 import orgRoutes from "./modules/organizations/org.routes.js";
+import tripRoutes from "./modules/trips/trip.routes.js";
 
 dotenv.config();
 
 const app = express();
 
-// Disable ETag — prevents Android OkHttp from sending If-None-Match which
-// causes Express to return 304 (empty body). Axios rejects 304 → logout loop.
 app.set("etag", false);
 
 // Middlewares
@@ -30,6 +29,7 @@ app.use("/auth", authRoutes);
 app.use("/users", userRoutes);
 app.use("/routes", routeRoutes);
 app.use("/organizations", orgRoutes);
+app.use("/trips", tripRoutes);
 
 // Health check
 app.get("/health", (_, res) => {
