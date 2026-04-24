@@ -112,7 +112,7 @@ export const endTrip = async (req, res, next) => {
 export const getTrips = async (req, res, next) => {
   try {
     const { id: user_id, role, organization_id } = req.user;
-    const { status, page = 1, limit = 10 } = req.query;
+    const { status, user_id: userIdFilter, page = 1, limit = 10 } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
     let sql = `
@@ -139,6 +139,11 @@ export const getTrips = async (req, res, next) => {
     if (status) {
       sql += " AND t.status = ?";
       params.push(status);
+    }
+
+    if (userIdFilter) {
+      sql += " AND t.user_id = ?";
+      params.push(userIdFilter);
     }
 
     sql += " ORDER BY t.created_at DESC LIMIT ? OFFSET ?";
