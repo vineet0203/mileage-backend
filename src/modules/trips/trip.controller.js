@@ -70,7 +70,7 @@ export const endTrip = async (req, res, next) => {
     const { route_rate } = trips[0];
 
     // MOCK EXTRACTION: Static values for now
-    const mockExtractedDistance = 15.5; // static mock
+    const mockExtractedDistance = 1;
     const mockExtractedPrice = mockExtractedDistance * route_rate;
 
     // Update trip with end info and mock metrics
@@ -87,9 +87,9 @@ export const endTrip = async (req, res, next) => {
          total_price = ?
        WHERE id = ?`,
       [
-        end_location_address, 
-        end_odometer_img || null, 
-        mockExtractedDistance, 
+        end_location_address,
+        end_odometer_img || null,
+        mockExtractedDistance,
         mockExtractedDistance, // Initially same as extracted
         mockExtractedPrice,
         mockExtractedPrice, // Initially same as extracted
