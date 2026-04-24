@@ -10,6 +10,7 @@ import userRoutes from "./modules/users/user.routes.js";
 import routeRoutes from "./modules/routes/route.routes.js";
 import orgRoutes from "./modules/organizations/org.routes.js";
 import tripRoutes from "./modules/trips/trip.routes.js";
+import uploadRoutes from "./modules/uploads/upload.routes.js";
 
 dotenv.config();
 
@@ -18,11 +19,17 @@ const app = express();
 app.set("etag", false);
 
 // Middlewares
-app.use(helmet({ contentSecurityPolicy: false }));
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
 app.use(cors({ origin: "*" }));
 app.use(morgan("dev"));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Serve static files from public directory
+app.use(express.static("public"));
 
 // Routes
 app.use("/auth", authRoutes);
@@ -30,6 +37,7 @@ app.use("/users", userRoutes);
 app.use("/routes", routeRoutes);
 app.use("/organizations", orgRoutes);
 app.use("/trips", tripRoutes);
+app.use("/uploads", uploadRoutes);
 
 // Health check
 app.get("/health", (_, res) => {
