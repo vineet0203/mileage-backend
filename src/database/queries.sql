@@ -64,11 +64,13 @@ CREATE TABLE IF NOT EXISTS trips (
   -- Start Trip
   start_location_address  TEXT          NOT NULL,
   start_odometer_img      VARCHAR(255)  DEFAULT NULL,
+  start_mileage           DECIMAL(10,2) DEFAULT 0.00,
   start_time              TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   
   -- End Trip
   end_location_address    TEXT          DEFAULT NULL,
   end_odometer_img        VARCHAR(255)  DEFAULT NULL,
+  end_mileage             DECIMAL(10,2) DEFAULT 0.00,
   end_time                TIMESTAMP     NULL DEFAULT NULL,
   
   -- Metrics
@@ -98,3 +100,8 @@ ALTER TABLE users
     FOREIGN KEY (organization_id)
     REFERENCES organizations(id)
     ON DELETE CASCADE;
+
+-- Add mileage tracking columns to trips table.
+ALTER TABLE trips 
+  ADD COLUMN start_mileage DECIMAL(10, 2) DEFAULT 0.00 AFTER start_odometer_img, 
+  ADD COLUMN end_mileage DECIMAL(10, 2) DEFAULT 0.00 AFTER end_odometer_img;

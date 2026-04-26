@@ -1,6 +1,7 @@
 import pool from "../../config/db.js";
 import ApiResponse from "../../utils/ApiResponse.js";
 import ApiError from "../../utils/ApiError.js";
+import { extractMileageFromImage } from "../../utils/mileage_utils.js";
 
 /**
  * POST /trips/start
@@ -27,12 +28,15 @@ export const startTrip = async (req, res, next) => {
 
     const route = routes[0];
 
-    // 2. Create the trip
+    // 2. Extract mileage from image
+    const start_mileage = await extractMileageFromImage(start_odometer_img);
+
+    // 3. Create the trip
     const [result] = await pool.query(
       `INSERT INTO trips 
-        (title, description, user_id, organization_id, route_id, route_name, route_rate, start_location_address, start_odometer_img, status) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'IN_PROGRESS')`,
-      [title, description || null, user_id, organization_id, route.id, route.name, route.rate, start_location_address, start_odometer_img || null]
+        (title, description, user_id, organization_id, route_id, route_name, route_rate, start_location_address, start_odometer_img, start_mileage, status) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'IN_PROGRESS')`,
+      [title, description || null, user_id, organization_id, route.id, route.name, route.rate, start_location_address, start_odometer_img || null, start_mileage]
     );
 
     res.status(201).json(
@@ -57,9 +61,9 @@ export const endTrip = async (req, res, next) => {
       throw new ApiError(400, "End location address is required.");
     }
 
-    // Fetch trip to get route rate for auto-calculation
+    // Fetch trip to get route rate and start mileage for auto-calculation
     const [trips] = await pool.query(
-      "SELECT route_rate FROM trips WHERE id = ? AND user_id = ? AND status = 'IN_PROGRESS'",
+      "SELECT route_rate, start_mileage FROM trips WHERE id = ? AND user_id = ? AND status = 'IN_PROGRESS'",
       [id, user_id]
     );
 
@@ -67,18 +71,25 @@ export const endTrip = async (req, res, next) => {
       throw new ApiError(404, "Trip not found or already completed.");
     }
 
-    const { route_rate } = trips[0];
+    const { route_rate, start_mileage } = trips[0];
 
-    // MOCK EXTRACTION: Static values for now
-    const mockExtractedDistance = 1;
-    const mockExtractedPrice = mockExtractedDistance * route_rate;
+    // Extraction from image
+    const end_mileage = await extractMileageFromImage(end_odometer_img);
 
-    // Update trip with end info and mock metrics
+    if (end_mileage < start_mileage) {
+      throw new ApiError(400, `End mileage (${end_mileage}) cannot be less than start mileage (${start_mileage}).`);
+    }
+
+    const extractedDistance = end_mileage - start_mileage;
+    const extractedPrice = extractedDistance * route_rate;
+
+    // Update trip with end info and metrics
     await pool.query(
       `UPDATE trips 
        SET 
          end_location_address = ?, 
          end_odometer_img = ?, 
+         end_mileage = ?,
          end_time = NOW(), 
          status = 'COMPLETED_PENDING',
          extracted_distance = ?,
@@ -89,10 +100,11 @@ export const endTrip = async (req, res, next) => {
       [
         end_location_address,
         end_odometer_img || null,
-        mockExtractedDistance,
-        mockExtractedDistance, // Initially same as extracted
-        mockExtractedPrice,
-        mockExtractedPrice, // Initially same as extracted
+        end_mileage,
+        extractedDistance,
+        extractedDistance, // Initially same as extracted
+        extractedPrice,
+        extractedPrice, // Initially same as extracted
         id
       ]
     );
