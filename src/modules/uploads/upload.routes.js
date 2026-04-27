@@ -14,11 +14,7 @@ router.post("/image", authMiddleware, upload.single("image"), (req, res) => {
     return res.status(400).json(new ApiResponse(400, null, "No file uploaded"));
   }
 
-  // Construct public URL
-  // In production, you might use a cloud storage URL
-  const protocol = req.protocol;
-  const host = req.get("host");
-  const imageUrl = `${protocol}://${host}/uploads/${req.file.filename}`;
+  const imageUrl = `/uploads/${req.file.filename}`;
 
   res.status(200).json(
     new ApiResponse(200, { url: imageUrl }, "Image uploaded successfully")

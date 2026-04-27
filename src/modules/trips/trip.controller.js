@@ -1,19 +1,28 @@
 import pool from "../../config/db.js";
 import ApiResponse from "../../utils/ApiResponse.js";
 import ApiError from "../../utils/ApiError.js";
-import { extractMileageFromImage } from "../../utils/mileage_utils.js";
 
 /**
  * POST /trips/start
  * Create/Start a new trip.
+ * Employee provides start_mileage manually and optionally an odometer image for proof.
  */
 export const startTrip = async (req, res, next) => {
   try {
     const { id: user_id, organization_id } = req.user;
-    const { title, description, route_id, start_location_address, start_odometer_img } = req.body;
+    const { title, description, route_id, start_location_address, start_mileage, start_odometer_img } = req.body;
 
     if (!title || !route_id || !start_location_address) {
       throw new ApiError(400, "Title, route, and start location are required.");
+    }
+
+    if (start_mileage === undefined || start_mileage === null || isNaN(Number(start_mileage))) {
+      throw new ApiError(400, "Start mileage is required and must be a number.");
+    }
+
+    const parsedStartMileage = Number(start_mileage);
+    if (parsedStartMileage < 0) {
+      throw new ApiError(400, "Start mileage cannot be negative.");
     }
 
     // 1. Fetch route to lock rate and name
@@ -28,15 +37,23 @@ export const startTrip = async (req, res, next) => {
 
     const route = routes[0];
 
-    // 2. Extract mileage from image
-    const start_mileage = await extractMileageFromImage(start_odometer_img);
-
-    // 3. Create the trip
+    // 2. Create the trip
     const [result] = await pool.query(
       `INSERT INTO trips 
         (title, description, user_id, organization_id, route_id, route_name, route_rate, start_location_address, start_odometer_img, start_mileage, status) 
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'IN_PROGRESS')`,
-      [title, description || null, user_id, organization_id, route.id, route.name, route.rate, start_location_address, start_odometer_img || null, start_mileage]
+      [
+        title,
+        description || null,
+        user_id,
+        organization_id,
+        route.id,
+        route.name,
+        route.rate,
+        start_location_address,
+        start_odometer_img || null,
+        parsedStartMileage,
+      ]
     );
 
     res.status(201).json(
@@ -50,18 +67,26 @@ export const startTrip = async (req, res, next) => {
 /**
  * PUT /trips/:id/end
  * End an existing trip.
+ * Employee provides end_mileage manually and optionally an odometer image for proof.
+ * distance and total_price are auto-calculated on end.
  */
 export const endTrip = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { id: user_id } = req.user;
-    const { end_location_address, end_odometer_img } = req.body;
+    const { end_location_address, end_mileage, end_odometer_img } = req.body;
 
     if (!end_location_address) {
       throw new ApiError(400, "End location address is required.");
     }
 
-    // Fetch trip to get route rate and start mileage for auto-calculation
+    if (end_mileage === undefined || end_mileage === null || isNaN(Number(end_mileage))) {
+      throw new ApiError(400, "End mileage is required and must be a number.");
+    }
+
+    const parsedEndMileage = Number(end_mileage);
+
+    // Fetch trip to get route rate and start mileage for calculation
     const [trips] = await pool.query(
       "SELECT route_rate, start_mileage FROM trips WHERE id = ? AND user_id = ? AND status = 'IN_PROGRESS'",
       [id, user_id]
@@ -73,17 +98,18 @@ export const endTrip = async (req, res, next) => {
 
     const { route_rate, start_mileage } = trips[0];
 
-    // Extraction from image
-    const end_mileage = await extractMileageFromImage(end_odometer_img);
-
-    if (end_mileage < start_mileage) {
-      throw new ApiError(400, `End mileage (${end_mileage}) cannot be less than start mileage (${start_mileage}).`);
+    if (parsedEndMileage < start_mileage) {
+      throw new ApiError(
+        400,
+        `End mileage (${parsedEndMileage}) cannot be less than start mileage (${start_mileage}).`
+      );
     }
 
-    const extractedDistance = end_mileage - start_mileage;
-    const extractedPrice = extractedDistance * route_rate;
+    // Calculate distance and total price
+    const distance = parsedEndMileage - start_mileage;
+    const total_price = distance * route_rate;
 
-    // Update trip with end info and metrics
+    // Update trip with end info and computed metrics
     await pool.query(
       `UPDATE trips 
        SET 
@@ -92,25 +118,25 @@ export const endTrip = async (req, res, next) => {
          end_mileage = ?,
          end_time = NOW(), 
          status = 'COMPLETED_PENDING',
-         extracted_distance = ?,
          distance = ?,
-         extracted_total_price = ?,
          total_price = ?
        WHERE id = ?`,
       [
         end_location_address,
         end_odometer_img || null,
-        end_mileage,
-        extractedDistance,
-        extractedDistance, // Initially same as extracted
-        extractedPrice,
-        extractedPrice, // Initially same as extracted
-        id
+        parsedEndMileage,
+        distance,
+        total_price,
+        id,
       ]
     );
 
     res.status(200).json(
-      new ApiResponse(200, null, "Trip ended successfully. Pending approval.")
+      new ApiResponse(
+        200,
+        { distance, total_price },
+        "Trip ended successfully. Pending approval."
+      )
     );
   } catch (error) {
     next(error);
@@ -268,7 +294,8 @@ export const updateTripStatus = async (req, res, next) => {
 
 /**
  * PATCH /trips/:id/metrics
- * Update trip distance and total price (Admin/Manager).
+ * Override trip distance and total price (Admin/Manager only).
+ * Useful for manual corrections after a trip is completed.
  */
 export const updateTripMetrics = async (req, res, next) => {
   try {
@@ -342,7 +369,7 @@ export const updateTripMetrics = async (req, res, next) => {
  */
 export const getStats = async (req, res, next) => {
   try {
-    const { id: user_id, role, organization_id, manager_id } = req.user;
+    const { id: user_id, role, organization_id } = req.user;
 
     let sql = `
       SELECT 
@@ -376,4 +403,3 @@ export const getStats = async (req, res, next) => {
     next(error);
   }
 };
-

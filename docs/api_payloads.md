@@ -410,6 +410,209 @@ curl -X GET "http://localhost:5000/routes?name=Sector" \
 
 ---
 
+## Trips Module — `/trips`
+
+> All trip routes require `Authorization: Bearer <accessToken>`.
+
+### Mileage & Pricing Logic
+
+- **`start_mileage`** — entered manually by the employee when starting the trip.
+- **`end_mileage`** — entered manually by the employee when ending the trip.
+- **`distance`** — calculated automatically: `end_mileage - start_mileage`
+- **`total_price`** — calculated automatically: `distance × route_rate`
+- **`start_odometer_img` / `end_odometer_img`** — optional image URLs uploaded as proof (use `POST /uploads/image` first).
+
+---
+
+#### 21. Start Trip
+**`POST /trips/start`**
+
+Employee starts a trip by providing the start mileage (read from the odometer).
+Optionally attach an odometer image URL for proof.
+
+```bash
+curl -X POST http://localhost:5000/trips/start \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Client Visit - Downtown",
+    "description": "Monthly client check-in",
+    "route_id": 1,
+    "start_location_address": "123 Office St, City",
+    "start_mileage": 15200,
+    "start_odometer_img": "http://localhost:5000/uploads/odometer-start.jpg"
+  }'
+```
+
+> **Required:** `title`, `route_id`, `start_location_address`, `start_mileage`
+> **Optional:** `description`, `start_odometer_img`
+
+**Response `data`:**
+```json
+{ "id": 42 }
+```
+
+---
+
+#### 22. End Trip
+**`PUT /trips/:id/end`**
+
+Employee ends the trip by providing the end mileage.
+`distance` and `total_price` are automatically calculated and stored.
+Optionally attach an odometer image URL for proof.
+
+```bash
+curl -X PUT http://localhost:5000/trips/42/end \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "end_location_address": "456 Client Ave, City",
+    "end_mileage": 15250,
+    "end_odometer_img": "http://localhost:5000/uploads/odometer-end.jpg"
+  }'
+```
+
+> **Required:** `end_location_address`, `end_mileage`
+> **Optional:** `end_odometer_img`
+
+**Response `data`:**
+```json
+{
+  "distance": 50,
+  "total_price": 500
+}
+```
+
+---
+
+#### 23. Get Trip Stats
+**`GET /trips/stats`**
+
+Returns summary statistics scoped by role.
+
+```bash
+curl -X GET http://localhost:5000/trips/stats \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+**Response `data`:**
+```json
+{
+  "total_trips": 10,
+  "total_mileage": 450,
+  "total_income": 4500,
+  "month_distance": 120,
+  "month_income": 1200
+}
+```
+
+---
+
+#### 24. List Trips
+**`GET /trips`**
+
+List trips scoped by role. Supports pagination and filtering.
+
+```bash
+curl -X GET "http://localhost:5000/trips?status=APPROVED&page=1&limit=10" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+| Query Param | Description |
+|---|---|
+| `status` | Filter by status: `IN_PROGRESS`, `COMPLETED_PENDING`, `APPROVED`, `REJECTED` |
+| `user_id` | Filter by employee ID (Admin/Manager only) |
+| `page` | Page number (default: 1) |
+| `limit` | Items per page (default: 10) |
+
+---
+
+#### 25. Get Trip Details
+**`GET /trips/:id`**
+
+```bash
+curl -X GET http://localhost:5000/trips/42 \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+**Response `data` (key fields):**
+```json
+{
+  "id": 42,
+  "title": "Client Visit - Downtown",
+  "status": "COMPLETED_PENDING",
+  "start_mileage": 15200,
+  "end_mileage": 15250,
+  "distance": 50,
+  "total_price": 500,
+  "route_rate": 10,
+  "start_odometer_img": "http://...",
+  "end_odometer_img": "http://...",
+  "employee_name": "John Doe"
+}
+```
+
+---
+
+#### 26. Approve / Reject Trip
+**`PATCH /trips/:id/status`**
+
+Admin or direct Manager approves or rejects a completed trip.
+
+```bash
+curl -X PATCH http://localhost:5000/trips/42/status \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{ "status": "APPROVED" }'
+```
+
+> **Valid statuses:** `APPROVED` | `REJECTED`
+
+---
+
+#### 27. Override Trip Metrics (Admin/Manager)
+**`PATCH /trips/:id/metrics`**
+
+Manually override `distance` and/or `total_price` after a trip is completed.
+If only `distance` is provided, `total_price` is recalculated using the locked `route_rate`.
+
+```bash
+curl -X PATCH http://localhost:5000/trips/42/metrics \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "distance": 55,
+    "total_price": 550
+  }'
+```
+
+---
+
+## Uploads Module — `/uploads`
+
+#### 28. Upload Image
+**`POST /uploads/image`**
+
+Upload an odometer proof image and receive its public URL.
+Use the returned URL as `start_odometer_img` or `end_odometer_img` in trip requests.
+
+```bash
+curl -X POST http://localhost:5000/uploads/image \
+  -H "Authorization: Bearer <accessToken>" \
+  -F "image=@/path/to/odometer.jpg"
+```
+
+**Response `data`:**
+```json
+{
+  "url": "http://localhost:5000/uploads/image-1714200000000-123456789.jpg"
+}
+```
+
+> **Constraints:** Images only · Max 5 MB
+
+---
+
 ## Health Check
 
 #### Health
