@@ -104,16 +104,20 @@ export const updateEmployee = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { organization_id, role: currentUserRole, id: currentUserId } = req.user;
-    const { fullname, role, designation, ssn, phone, manager_id } = req.body;
+    const { fullname, role, designation, ssn, phone, manager_id, email } = req.body;
 
     // Check if employee exists in org
     const [existing] = await pool.query(
-      "SELECT id, manager_id, role FROM users WHERE id = ? AND organization_id = ?",
+      "SELECT id, email, manager_id, role FROM users WHERE id = ? AND organization_id = ?",
       [id, organization_id]
     );
 
     if (existing.length === 0) {
       throw new ApiError(404, "Employee not found");
+    }
+
+    if (email !== undefined && email !== existing[0].email) {
+      throw new ApiError(400, "Email cannot be updated once the account is created.");
     }
 
     // Authorization Layer
@@ -131,66 +135,43 @@ export const updateEmployee = async (req, res, next) => {
       throw new ApiError(403, "Employees can only update their own profile.");
     }
 
-    // ── Field permission matrix ────────────────────────────────────────────
-    // | Field       | Self (any role) | Admin/Manager on others |
-    // |-------------|-----------------|-------------------------|
-    // | fullname    | ✅              | ✅                      |
-    // | designation | ✅              | ✅                      |
-    // | phone       | ✅              | ❌                      |
-    // | role        | ❌              | Admin only              |
-    // | ssn         | ❌              | Admin only              |
-    // | manager_id  | ❌              | Admin only              |
-    // ──────────────────────────────────────────────────────────────────────
-
     const fields = [];
     const values = [];
 
-    // fullname — self or admin/manager on others
     if (fullname !== undefined) {
       fields.push("fullname = COALESCE(?, fullname)");
       values.push(fullname?.trim() || null);
     }
 
-    // designation/skills — self or admin/manager on others
     if (designation !== undefined) {
       fields.push("designation = COALESCE(?, designation)");
       values.push(designation?.trim() || null);
     }
 
-    // phone — self only
     if (phone !== undefined) {
-      if (!isEditingSelf) {
-        throw new ApiError(403, "Phone number can only be updated by the user themselves.");
-      }
       fields.push("phone = COALESCE(?, phone)");
       values.push(phone?.trim() || null);
     }
 
-    // ssn — admin only
     if (ssn !== undefined) {
-      if (!isAdmin) {
-        throw new ApiError(403, "Only Admins can update SSN.");
-      }
       fields.push("ssn = COALESCE(?, ssn)");
       values.push(ssn?.trim() || null);
     }
 
-    // role — admin only, not on self
     if (role !== undefined && role !== existing[0].role) {
-      if (!isAdmin || isEditingSelf) {
-        throw new ApiError(403, "Only Admins can change roles of other users.");
+      if (currentUserRole === 'EMPLOYEE') {
+        throw new ApiError(403, "Employees cannot change roles.");
       }
-      if (role === 'ADMIN') {
-        throw new ApiError(403, "Cannot assign ADMIN role.");
+      if (role === 'ADMIN' && currentUserRole !== 'ADMIN') {
+        throw new ApiError(403, "Only existing Admins can assign ADMIN role.");
       }
       fields.push("role = ?");
       values.push(role);
     }
 
-    // manager_id — admin only
     if (manager_id !== undefined) {
-      if (!isAdmin) {
-        throw new ApiError(403, "Only Admins can change a user's reporting manager.");
+      if (currentUserRole === 'EMPLOYEE') {
+        throw new ApiError(403, "Employees cannot change their reporting manager.");
       }
       const normalizedManagerId = (manager_id === "" || manager_id === null) ? null : manager_id;
       if (normalizedManagerId !== null) {
