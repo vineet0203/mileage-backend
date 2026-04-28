@@ -1,6 +1,6 @@
+import fs from "fs";
 import multer from "multer";
 import path from "path";
-import fs from "fs";
 import ApiError from "../utils/ApiError.js";
 
 // Ensure upload directory exists
@@ -32,6 +32,6 @@ export const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limit
+    fileSize: 50 * 1024 * 1024, // 50MB limit
   },
 });
