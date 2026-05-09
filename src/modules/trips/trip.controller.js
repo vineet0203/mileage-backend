@@ -156,7 +156,8 @@ export const getTrips = async (req, res, next) => {
     let sql = `
       SELECT 
         t.*, 
-        u.fullname as employee_name
+        u.fullname as employee_name,
+        u.profile_image
       FROM trips t
       JOIN users u ON t.user_id = u.id
       WHERE t.organization_id = ?
@@ -211,7 +212,8 @@ export const getTripDetails = async (req, res, next) => {
         t.*, 
         u.fullname as employee_name,
         u.email as employee_email,
-        u.phone as employee_phone
+        u.phone as employee_phone,
+        u.profile_image
       FROM trips t
       JOIN users u ON t.user_id = u.id
       WHERE t.id = ? AND t.organization_id = ?`,
