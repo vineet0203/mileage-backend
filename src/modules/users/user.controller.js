@@ -17,7 +17,7 @@ export const getEmployees = async (req, res, next) => {
 
     let sql = `
       SELECT 
-        u.id, u.email, u.fullname, u.role, u.designation, u.ssn, u.phone,
+        u.id, u.email, u.fullname, u.role, u.designation, u.ssn, u.phone, u.profile_image,
         u.organization_id, u.manager_id, u.is_verified, u.created_at,
         m.fullname as manager_name
       FROM users u
@@ -77,7 +77,7 @@ export const getUserDetails = async (req, res, next) => {
     const { organization_id } = req.user;
 
     const [users] = await pool.query(
-      `SELECT id, email, fullname, role, designation, ssn, phone, organization_id, manager_id, is_verified, created_at 
+      `SELECT id, email, fullname, role, designation, ssn, phone, profile_image, organization_id, manager_id, is_verified, created_at 
        FROM users WHERE id = ? AND organization_id = ?`,
       [id, organization_id]
     );
@@ -104,7 +104,7 @@ export const updateEmployee = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { organization_id, role: currentUserRole, id: currentUserId } = req.user;
-    const { fullname, role, designation, ssn, phone, manager_id, email } = req.body;
+    const { fullname, role, designation, ssn, phone, manager_id, email, profile_image } = req.body;
 
     // Check if employee exists in org
     const [existing] = await pool.query(
@@ -156,6 +156,11 @@ export const updateEmployee = async (req, res, next) => {
     if (ssn !== undefined) {
       fields.push("ssn = COALESCE(?, ssn)");
       values.push(ssn?.trim() || null);
+    }
+
+    if (profile_image !== undefined) {
+      fields.push("profile_image = COALESCE(?, profile_image)");
+      values.push(profile_image?.trim() || null);
     }
 
     if (role !== undefined && role !== existing[0].role) {

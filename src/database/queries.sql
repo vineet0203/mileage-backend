@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS users (
   reset_token            VARCHAR(255)  DEFAULT NULL,
   reset_token_expires_at DATETIME      DEFAULT NULL,
   invite_token           VARCHAR(255)  DEFAULT NULL,
+  profile_image          VARCHAR(512)  DEFAULT NULL,
   refresh_token          TEXT          DEFAULT NULL,
   created_at             TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at             TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -132,3 +133,7 @@ ALTER TABLE trips
 -- [MIG-005] Change route_rate to DECIMAL to match actual pricing precision.
 ALTER TABLE trips
   MODIFY COLUMN route_rate DECIMAL(10,2) NOT NULL;
+
+-- [MIG-006] Add profile_image column to users table.
+ALTER TABLE users
+  ADD COLUMN profile_image VARCHAR(512) DEFAULT NULL AFTER invite_token;
